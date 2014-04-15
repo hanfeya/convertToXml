@@ -1,0 +1,274 @@
+#!/usr/bin/python
+# -*- coding:utf-8 -*- 
+
+
+import os
+import sys
+import shlex
+import time
+import uuid
+import json
+import nose
+import time
+import Queue
+import signal
+import string
+import shutil
+import zipfile
+import logging
+import datetime
+import datetime
+import traceback
+import subprocess
+import threading
+from ConfigParser import ConfigParser
+from commands import getoutput as shell
+from os.path import join, exists, dirname
+from client import ReportClient
+
+
+log = logging.getLogger(__name__)
+'''global log instance'''
+
+TAG='%s%s%s' % ('-' * 18, 'file output save Plugin', '-' * 18)
+'''global log output tag'''
+
+TIME_STAMP_FORMAT = '%Y-%m-%d %H:%M:%S'
+'''global time stamp format'''
+
+OUTPUT_FILE_NAME = 'result.txt'
+'''global test result output file name'''
+
+LOG_FILE_NAME = 'log.txt'
+'''global test log output name'''
+
+FAILURE_SNAPSHOT_NAME = 'failure.png'
+'''default string name of result file. can be modify by user-specify'''
+
+REPORT_TIME_STAMP_FORMAT = '%Y-%m-%d %H:%M:%S'
+
+ANDROID_LOG_SHELL = 'adb %s %s logcat -v time'
+'''android log shell command line'''
+
+def uniqueID():
+    '''
+    return a unique id of test session.
+    '''
+    return str(uuid.uuid1())
+
+def _time():
+    '''
+    generic time stamp format
+    '''
+    #return time.strftime(TIME_STAMP_FORMAT, time.localtime(time.time()))
+    return str(datetime.datetime.now())
+
+def reporttime():
+    '''
+    return time stamp format with REPORT_TIME_STAMP_FORMAT
+    '''
+    return time.strftime(REPORT_TIME_STAMP_FORMAT, time.localtime(time.time()))
+
+def _mkdir(path):
+    '''
+    create directory as path
+    '''
+    if not exists(path):
+        os.makedirs(path)
+    return path
+
+def writeResultToFile(output, content):
+    '''
+    Used to generated brief result to local result.txt file.
+    '''
+    with open(output, 'a') as f:
+        f.write('%s%s' % (json.dumps(content), os.linesep))
+
+def formatOutput(name, etype, err):
+    '''
+    change the output format of exception
+    '''
+    exception_text = traceback.format_exception(*err)
+    #exception_text = "".join(exception_text).replace(os.linesep, '')
+    return exception_text
+
+class TestCounter(object):
+    '''
+    Test session counter.
+    '''
+    def __init__(self, sid=None, tid=0, cid=0, cycles=None):
+        self.__sid = sid if sid else uniqueID()
+        self.__tid = tid
+        self.__cid = cid
+        self.__total_cycle = cycles
+
+    @property
+    def sid(self):
+        '''
+        return session id
+        '''
+        return self.__sid
+
+    def next_tid(self):
+        '''
+        generated test case id
+        '''
+        self.__tid += 1
+        return self.__tid
+
+    def next_cid(self):
+        '''
+        generated test case id
+        '''
+        self.__cid += 1
+        return self.__cid
+
+    def progress(self):
+        if self.__total_cycle:
+            #return '%.0f%%' % (100.0 * self.__cid/int(self.__total_cycle))
+            return '%0.2f' % (float(self.__cid)/float(self.__total_cycle))
+        else:
+            return 'unkown'
+
+    def alive(self):
+        if int(self.__cid) == int(self.__total_cycle):
+            return False
+        else:
+            return True
+
+    def total(self):
+        '''
+        return the number of test case
+        '''
+        return self.__tid
+
+    def reset(self):
+        '''
+        reset test case id
+        '''
+        self.__tid = 0
+
+class TestCaseContext(object):
+    '''
+    Test case context. test case extends from unittest.TestCase can refer it by self.contexts.
+    The instance of it is injected to the context of test case instance by plugin when prepareTestCase.
+    
+    '''
+    def __init__(self, output_failures, output_errors):
+        self.__output_failures = output_failures
+        self.__output_errors = output_errors
+        self.__case_start_time = None
+        self.__case_end_time = None
+        self.__case_dir_name = None
+        self.__user_log_dir = None
+        self.__case_report_dir_name = None
+        self.__case_report_dir_path = None
+        self.__case_report_tmp_dir = None
+        self.__screenshot_at_failure = None
+        self.__log = None
+        self.__expect = None
+
+    @property
+    def case_start_time(self):
+        return self.__case_start_time
+
+    @case_start_time.setter
+    def case_start_time(self, v):
+        self.__case_start_time = v
+
+    @property
+    def case_end_time(self):
+        return self.__case_end_time
+
+    @case_end_time.setter
+    def case_end_time(self, v):
+        self.__case_end_time = v
+
+    @property
+    def user_log_dir(self):
+        return self.__user_log_dir
+
+    @user_log_dir.setter
+    def user_log_dir(self, v):
+        self.__user_log_dir = v
+
+    @property
+    def case_dir_name(self):
+        return self.__case_dir_name
+
+    @case_dir_name.setter
+    def case_dir_name(self, v):
+        self.__case_dir_name = v
+
+    ###
+    @property
+    def case_report_dir_name(self):
+        self.__case_report_dir_name = '%s%s%s' % (self.__case_dir_name, '@', str(self.__case_start_time).replace(' ', '_'))
+        return self.__case_report_dir_name
+
+    #nose frm need
+    @property
+    def fail_case_report_dir_path(self):
+        self.__case_report_dir_path = join(self.__output_failures, self.case_report_dir_name)
+        return self.__case_report_dir_path
+
+    @property
+    def error_case_report_dir_path(self):
+        self.__case_report_dir_path = join(self.__output_errors, self.case_report_dir_name)
+        return self.__case_report_dir_path
+
+    @property
+    def case_report_tmp_dir(self):
+        self.__case_report_tmp_dir = join(join(os.getcwd(), 'tmp'), self.case_report_dir_name)
+        return self.__case_report_tmp_dir
+
+    @property
+    def fail_screenshot_at_failure(self):
+        self.__screenshot_at_failure = join(join(self.fail_case_report_dir_path, 'logs'), FAILURE_SNAPSHOT_NAME)
+        return self.__screenshot_at_failure
+
+    @property
+    def fail_log(self):
+        self.__log = join(self.fail_case_report_dir_path, 'log.zip')
+        return self.__log
+
+    @property
+    def error_screenshot_at_failure(self):
+        self.__screenshot_at_failure = join(join(self.error_case_report_dir_path, 'logs'), FAILURE_SNAPSHOT_NAME)
+        return self.__screenshot_at_failure
+
+    @property
+    def error_log(self):
+        self.__log = join(self.error_case_report_dir_path, 'log.zip')
+        return self.__log
+
+    @property
+    def expect(self):
+        return self.__expect
+
+class ReporterPlugin(nose.plugins.Plugin):
+    """
+    handle test output.
+    """
+    def addFailure(self, test, err, capt=None, tbinfo=None):
+        casename=test.id().split('.')[-3:]
+        Feature =test.id().split('.')[-2:]
+        result="Fail"
+        description=test.__doc__
+        writeToXml()
+
+    #remote upload
+    def addError(self, test, err, capt=None):
+        casename=test.id().split('.')[-3:]
+        Feature =test.id().split('.')[-2:]
+        result="Error"
+        description=test.__doc__
+        writeToXml()       
+
+    #remote upload
+    def addSuccess(self, test, capt=None):
+        casename=test.id().split('.')[-3:]
+        Feature =test.id().split('.')[-2:]
+        result="Pass"
+        description=test.__doc__
+        writeToXml() 
