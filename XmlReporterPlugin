@@ -1,0 +1,99 @@
+#!/usr/bin/python
+# -*- coding:utf-8 -*- 
+import os
+import sys
+import time
+import uuid
+import nose
+from ConfigParser import ConfigParser
+from commands import getoutput as shell
+import elementtree.ElementTree as ET
+
+class XmlReporterPlugin(nose.plugins.Plugin):
+    """
+    handle test output.
+    """
+    name = 'reporter'
+    #score = 200
+
+    def __init__(self):
+        super(XmlReporterPlugin, self).__init__()
+		
+    def options(self, parser, env):
+        """ 
+        Register commandline options.
+        Called to allow plugin to register command line options with the parser. DO NOT return a value from this method unless you want to stop all other plugins from setting their options.        
+        """
+        super(XmlReporterPlugin, self).options(parser, env)
+
+        ###local ouput result config###
+		parser.add_option("--xml-report-file", action="store", 
+						  default="nose_report.xml", dest="file_name", help="File to output XML report to")
+		
+		parser.add_option("--xml-accumulate", action="store_true", 
+						  dest="accumulate", help="Accumulate reults into report file, or start new")
+
+    def configure(self, options, conf):
+        """
+        Called after the command  line has been parsed, with the parsed options and the config container. Here, implement any config storage or changes to state or operation that are set by command line options. DO NOT return a value from this method unless you want to stop all other plugins from being configured.
+        """
+        super(XmlReporterPlugin, self).configure(options, conf)
+		
+        self.conf = conf
+        self.opt = options
+        
+        self.reportFile = options.file_name
+		self.accumulate = options.accumulate
+
+	def _new_tree(self):
+		""" Initialise a new tree """
+		self.root = ET.Element("sets")
+		self.tree = ET.ElementTree(self.root)
+		
+    def begin(self):
+		""" If a file already exists and --xml-accumulate is set, we add into that, otherwise, create a new one """
+		if self.accumulate:
+			try:
+				self.tree = ET.parse(self.reportFile)
+				self.root = self.tree.getroot()
+			except IOError:
+				self._new_tree()
+		else:
+			self._new_tree()
+			
+
+    #Case fail
+    def addFailure(self, test, err, capt=None, tbinfo=None):
+        e = ET.SubElement(self.root, "set")
+		e.set("feature", test.id().split('.')[-1:])
+		ET.SubElement(e, "case")
+		e.set("name", test.id().split('.')[-3:])
+		e.set("description", test.__doc__)
+		e.set("result","Fail")
+		
+    #Case error
+    def addError(self, test, err, capt=None):
+        e = ET.SubElement(self.root, "set")
+		e.set("feature", test.id().split('.')[-1:])
+		ET.SubElement(e, "case")
+		e.set("name", test.id().split('.')[-3:])
+		e.set("description", test.__doc__)
+		e.set("result","Error")
+
+    #Case success
+    def addSuccess(self, test, capt=None):
+        e = ET.SubElement(self.root, "set")
+		e.set("feature", test.id().split('.')[-1:])
+		ET.SubElement(e, "case")
+		e.set("name", test.id().split('.')[-3:])
+		e.set("description", test.__doc__)
+		e.set("result","Success")
+	
+	#Case N/A
+	def addSkip(self,test)
+	    e = ET.SubElement(self.root, "set")
+		e.set("feature", test.id().split('.')[-1:])
+		ET.SubElement(e, "case")
+		e.set("name", test.id().split('.')[-3:])
+		e.set("description", test.__doc__)
+		e.set("result","N/A")
