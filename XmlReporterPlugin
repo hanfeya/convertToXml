@@ -95,20 +95,21 @@ class XmlReporterPlugin(nose.plugins.Plugin):
         
     #Case error
     def addError(self, test, err, capt=None):
+        m, c, n = test.id().split('.')[-3:]
         e = ET.SubElement(self.root, "set")
-        e.set("feature", test.id().split('.')[-1:])
-        ET.SubElement(e, "case")
-        e.set("name", test.id().split('.')[-3:])
+        e.set("feature",m)
+        a = ET.SubElement(self.root, "case")
+        a.set("name", n)
         e.set("description", test.__doc__)
         e.set("result","Error")
 
     #Case success
     def addSuccess(self, test, capt=None):
+        m, c, n = test.id().split('.')[-3:]
         e = ET.SubElement(self.root, "set")
-        e.set("feature", test.id().split('.')[-1:])
-        ET.SubElement(e, "case")
-        e.set("name", test.id().split('.')[-3:])
-        e.set("description", test.__doc__)
+        e.set("feature",m)
+        a = ET.SubElement(self.root, "case")
+        a.set("name", n)
         e.set("result","Success")
 
     def finalize(self, result):
