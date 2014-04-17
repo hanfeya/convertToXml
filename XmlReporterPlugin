@@ -9,6 +9,8 @@ from ConfigParser import ConfigParser
 from commands import getoutput as shell
 import xml.etree.ElementTree as ET
 
+REPORT_TIME_STAMP_FORMAT = '%Y/%m/%d %H:%M:%S'
+
 class XmlReporterPlugin(nose.plugins.Plugin):
     """
     handle test output.
@@ -30,7 +32,7 @@ class XmlReporterPlugin(nose.plugins.Plugin):
                           default="nose_report.xml", dest="file_name", help="File to output XML report to")
         
         parser.add_option("--xml-accumulate", action="store_true", 
-                          dest="accumulate", default=False, help="Accumulate reults into report file, or start new")
+                          dest="accumulate", default=True, help="Accumulate reults into report file, or start new")
 
     def configure(self, options, conf):
         """
@@ -47,7 +49,7 @@ class XmlReporterPlugin(nose.plugins.Plugin):
 
     def _new_tree(self):
         """ Initialise a new tree """
-        sys.stderr.write('new-----\n')
+        #sys.stderr.write('new-----\n')
         self.root = ET.Element("sets")
         self.tree = ET.ElementTree(self.root)
         
@@ -57,40 +59,36 @@ class XmlReporterPlugin(nose.plugins.Plugin):
             try:
                 #fpath = os.path.join(os.getcwd(), self.reportFile)
 
-                sys.stderr.write(self.reportFile)
+                #sys.stderr.write(self.reportFile)
                 self.tree = ET.parse(self.reportFile)
                 self.root = self.tree.getroot()
-                sys.stderr.write(str(self.tree))
+                #sys.stderr.write(str(self.tree))
             except IOError:
-                sys.stderr.write('e-----\n')
+                #sys.stderr.write('e-----\n')
                 self._new_tree()
         else:
-            sys.stderr.write(os.path.abspath(self.reportFile))
+            #sys.stderr.write(os.path.abspath(self.reportFile))
             self._new_tree()
 
-    #def _reporttime():
+    #def _reporttime(self):
         """
         return time stamp format with REPORT_TIME_STAMP_FORMAT
         """
+    #    REPORT_TIME = time.strftime(REPORT_TIME_STAMP_FORMAT, time.localtime(time.time()))
 
-    #return time.strftime(REPORT_TIME_STAMP_FORMAT, time.localtime(time.time()))
-    
-    #def startTest(self):
-    #    self.stTime = _reportTime()
+    #    return REPORT_TIME 
 
     #Case fail
     def addFailure(self, test, err, capt=None, tbinfo=None):
-        #sys.stderr.write("fail fail fail fail\n")
-    #    self.endTime = _reportTime()
+    #    ReportTime = self._reportTime()
         m, c, n = test.id().split('.')[-3:]
         e = ET.SubElement(self.root, "set")
         e.set("feature",m)
-        a = ET.SubElement(self.root, "case")
-        a.set("name", n)
+        e = ET.SubElement(e, "case")
+        e.set("name", n)
         #e.set("description", test.__doc__)
-        a.set("result","Fail")
-    #    e.set("StartTime",self.stTime)
-    #    e.set("endTime",self.endTime)
+        e.set("result","Fail")
+    #    e.set("ReportTime",ReportTime)
 
         
     #Case error
@@ -98,9 +96,9 @@ class XmlReporterPlugin(nose.plugins.Plugin):
         m, c, n = test.id().split('.')[-3:]
         e = ET.SubElement(self.root, "set")
         e.set("feature",m)
-        a = ET.SubElement(self.root, "case")
-        a.set("name", n)
-        e.set("description", test.__doc__)
+        e = ET.SubElement(e, "case")
+        e.set("name", n)
+        #e.set("description", test.__doc__)
         e.set("result","Error")
 
     #Case success
@@ -108,10 +106,12 @@ class XmlReporterPlugin(nose.plugins.Plugin):
         m, c, n = test.id().split('.')[-3:]
         e = ET.SubElement(self.root, "set")
         e.set("feature",m)
-        a = ET.SubElement(self.root, "case")
-        a.set("name", n)
+        e = ET.SubElement(e, "case")
+        e.set("name", n)
         e.set("result","Success")
 
     def finalize(self, result):
-        """ Write out report as serialized XML """
+        """
+        Write out report as serialized XML 
+        """
         self.tree.write(self.reportFile)
